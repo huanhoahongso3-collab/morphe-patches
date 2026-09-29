@@ -16,7 +16,15 @@
           "apkFileType": "APKM",
           "appIconColor": "#1DB954",
           "signatures": null,
-          "targets": []
+          "targets": [
+            {
+              "version": null,
+              "versionCodes": null,
+              "isExperimental": false,
+              "minSdk": null,
+              "description": null
+            }
+          ]
         }
       ],
       "options": []
@@ -35,7 +43,15 @@
           "apkFileType": "APKM",
           "appIconColor": "#1DB954",
           "signatures": null,
-          "targets": []
+          "targets": [
+            {
+              "version": null,
+              "versionCodes": null,
+              "isExperimental": false,
+              "minSdk": null,
+              "description": null
+            }
+          ]
         }
       ],
       "options": []
@@ -54,7 +70,15 @@
           "apkFileType": "APKM",
           "appIconColor": "#1DB954",
           "signatures": null,
-          "targets": []
+          "targets": [
+            {
+              "version": null,
+              "versionCodes": null,
+              "isExperimental": false,
+              "minSdk": null,
+              "description": null
+            }
+          ]
         }
       ],
       "options": []
@@ -73,7 +97,15 @@
           "apkFileType": "APKM",
           "appIconColor": "#1DB954",
           "signatures": null,
-          "targets": []
+          "targets": [
+            {
+              "version": null,
+              "versionCodes": null,
+              "isExperimental": false,
+              "minSdk": null,
+              "description": null
+            }
+          ]
         }
       ],
       "options": [
