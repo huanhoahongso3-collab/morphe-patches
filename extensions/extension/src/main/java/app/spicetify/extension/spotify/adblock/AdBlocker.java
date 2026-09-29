@@ -169,7 +169,7 @@ public final class AdBlocker {
             valueField.setAccessible(true);
             valueField.set(attribute, value);
             return;
-        } catch (NoSuchFieldException ignored) {}
+        } catch (Throwable ignored) {}
 
         // Fallback: look for any declared field containing "value"
         try {
