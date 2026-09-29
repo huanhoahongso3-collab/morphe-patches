@@ -33,5 +33,16 @@ URL builder. Its new Java helper removes named tracking parameters while
 preserving other query parameters and fragments, instead of truncating the
 query. These adaptations were made on September 17, 2026.
 
+The ad-blocking and detection-hiding features adapt concepts from
+`app/revanced/patches/spotify/misc/UnlockPremiumPatch.kt` and
+`app/revanced/patches/spotify/misc/fix/SpoofPackageInfoPatch.kt`:
+- Ad blocking targets in-app display, home feed brand ads, browse brand ads,
+  popups, and context menu promotions while intentionally leaving audio playback
+  and audio ads untouched to maintain standard streaming stability.
+- Detection hiding prevents modified client detection by disabling Play Integrity
+  reporting and spoofing Spotify's official release certificate and Play Store
+  installer identity.
+
 No code from the binary-only candidates or the unresolved cvnfork source was
 imported. Spotify APKs and other proprietary assets are excluded.
+

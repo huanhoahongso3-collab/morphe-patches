@@ -16,6 +16,8 @@ change only selected Android resources, not every Spotify screen.
 
 | Patch | Default | Behavior |
 | --- | --- | --- |
+| Block ads | Enabled | Blocks banner, pop-up, home feed, and browse ads around the app without modifying audio playback. |
+| Hide app detection | Enabled | Hides app modifications and prevents Spotify from detecting the patched client by disabling integrity verification reporting and spoofing official package signatures. |
 | Clean sharing links | Enabled | Removes `si`, `pi`, and known `utm_*` parameters from `open.spotify.com` links. Preserves timestamps, context, other parameters, and fragments. |
 | Theme colors | Disabled | Sets selected background, accent, and pressed-accent colors. The default background is AMOLED black. Hardcoded colors and animations can retain Spotify's colors. |
 
