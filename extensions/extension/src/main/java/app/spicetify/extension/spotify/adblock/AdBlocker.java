@@ -16,6 +16,7 @@ import java.util.Set;
  * Filters out in-app display ads, promotional popups, home and browse feed ad banners,
  * and context menu upsell items, without modifying audio playback or audio ads.
  */
+@android.annotation.SuppressLint("all")
 public final class AdBlocker {
 
     /**

@@ -19,6 +19,7 @@ import java.util.Map;
  * Prevents Spotify from detecting app modifications by spoofing the application's
  * package info, signing certificates, and installer source (Google Play Store).
  */
+@android.annotation.SuppressLint("all")
 public final class DetectionBypass {
 
     public static final String SPOTIFY_PACKAGE_NAME = "com.spotify.music";

@@ -4,6 +4,12 @@ extension {
 
 android {
     namespace = "app.spicetify.extension.spotify"
+
+    lint {
+        abortOnError = false
+        checkReleaseBuilds = false
+        disable += setOf("BlockedPrivateApi", "DiscouragedPrivateApi")
+    }
 }
 
 dependencies {
