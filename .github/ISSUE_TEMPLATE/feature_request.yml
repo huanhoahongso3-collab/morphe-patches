@@ -5,8 +5,8 @@ body:
   - type: markdown
     attributes:
       value: |
-        Check the [current patches](https://github.com/spicetify/morphe-patches#patches)
-        and [existing issues](https://github.com/spicetify/morphe-patches/issues) first.
+        Check the [current patches](https://github.com/huanhoahongso3-collab/morphe-patches#patches)
+        and [existing issues](https://github.com/huanhoahongso3-collab/morphe-patches/issues) first.
   - type: textarea
     id: behavior
     attributes:
