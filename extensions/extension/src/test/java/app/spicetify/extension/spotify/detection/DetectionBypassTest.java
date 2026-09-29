@@ -30,7 +30,7 @@ public class DetectionBypassTest {
 
         DetectionBypass.spoofPackageInfo(otherApp);
 
-        assertEquals(originalSig, otherApp.signatures[0]);
+        org.junit.Assert.assertSame(originalSig, otherApp.signatures[0]);
     }
 
     @Test
