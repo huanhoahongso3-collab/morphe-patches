@@ -22,7 +22,7 @@ jobs:
       - name: Test and build
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: ./gradlew :extensions:extension:testDebugUnitTest :extensions:extension:lintDebug :patches:test buildAndroid --no-daemon
+        run: ./gradlew :extensions:extension:testDebugUnitTest :extensions:extension:lintDebug :patches:test buildAndroid --no-daemon --stacktrace --info
       - uses: actions/upload-artifact@v4
         with:
           name: patches
