@@ -137,6 +137,33 @@
           "values": null
         }
       ]
+    },
+    {
+      "name": "Allow Google Sign-In",
+      "description": "Fixes Google Sign-In and standard login on unofficial builds by bypassing certificate and integrity validation that Spotify's OAuth flow performs before allowing sign-in via Google or normal credentials.",
+      "default": true,
+      "category": null,
+      "dependencies": [],
+      "compatiblePackages": [
+        {
+          "packageName": "com.spotify.music",
+          "name": "Spotify",
+          "description": null,
+          "apkFileType": "APKM",
+          "appIconColor": "#1DB954",
+          "signatures": null,
+          "targets": [
+            {
+              "version": null,
+              "versionCodes": null,
+              "isExperimental": false,
+              "minSdk": null,
+              "description": null
+            }
+          ]
+        }
+      ],
+      "options": []
     }
   ]
 }

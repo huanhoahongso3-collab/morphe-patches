@@ -9,7 +9,6 @@ import android.os.Build;
 import android.os.Parcel;
 import android.os.Parcelable;
 
-import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.util.Map;
@@ -17,7 +16,7 @@ import java.util.Map;
 /**
  * Runtime detection bypass helper for Spotify on Android.
  * Prevents Spotify from detecting app modifications by spoofing the application's
- * package info, signing certificates, and installer source (Google Play Store).
+ * package info, signing certificates, installer source, and login integrity tokens.
  */
 @android.annotation.SuppressLint("all")
 public final class DetectionBypass {
@@ -27,6 +26,7 @@ public final class DetectionBypass {
 
     /**
      * Official Spotify release signing certificate hashes.
+     * These match the certificates registered with Spotify's backend and Google Sign-In OAuth.
      */
     public static final String OFFICIAL_SIGNATURE_SHA1 = "d6a6dced4a85f24204bf9505ccc1fce114cadb32";
     public static final String OFFICIAL_SIGNATURE_SHA256 =
@@ -38,7 +38,7 @@ public final class DetectionBypass {
     private DetectionBypass() {}
 
     /**
-     * Installs runtime hooks for PackageInfo and signature verification.
+     * Installs runtime hooks for PackageInfo, signature verification, and login bypass.
      * Should be called as early as possible during application initialization.
      *
      * @param context Application context
@@ -51,9 +51,53 @@ public final class DetectionBypass {
 
         try {
             hookPackageInfoCreator();
+        } catch (Throwable ignored) {}
+
+        try {
             clearPackageManagerCache();
+        } catch (Throwable ignored) {}
+
+        try {
+            spoofInstallerSource(context);
+        } catch (Throwable ignored) {}
+    }
+
+    /**
+     * Spoofs the installer package name at the PackageManager level so that
+     * Spotify's install-source checks see "com.android.vending" (Google Play Store).
+     * This is required for login to succeed because Spotify's auth flow validates
+     * whether the app was installed from the Play Store.
+     */
+    private static void spoofInstallerSource(Context context) {
+        if (context == null) return;
+        try {
+            // For API 30+: use InstallSourceInfo spoof approach via reflection
+            if (Build.VERSION.SDK_INT >= 30) {
+                Object ipm = getIPackageManager();
+                if (ipm != null) {
+                    // Try to override getInstallSourceInfo if accessible
+                    // (best-effort; caught silently if blocked)
+                    try {
+                        Method setMethod = ipm.getClass().getMethod(
+                                "setInstallerPackageName",
+                                String.class, String.class);
+                        setMethod.setAccessible(true);
+                        setMethod.invoke(ipm, SPOTIFY_PACKAGE_NAME, PLAY_STORE_INSTALLER);
+                    } catch (Throwable ignored) {}
+                }
+            }
+        } catch (Throwable ignored) {}
+    }
+
+    private static Object getIPackageManager() {
+        try {
+            Class<?> amClass = Class.forName("android.app.ActivityThread");
+            Method currentMethod = amClass.getMethod("currentActivityThread");
+            Object activityThread = currentMethod.invoke(null);
+            Method getPmMethod = activityThread.getClass().getMethod("getPackageManager");
+            return getPmMethod.invoke(activityThread);
         } catch (Throwable ignored) {
-            // Fail-safe to avoid blocking app launch
+            return null;
         }
     }
 
@@ -104,6 +148,8 @@ public final class DetectionBypass {
             if (sig != null) {
                 if (packageInfo.signatures != null && packageInfo.signatures.length > 0) {
                     packageInfo.signatures[0] = sig;
+                } else if (packageInfo.signatures == null) {
+                    packageInfo.signatures = new Signature[]{sig};
                 }
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
                     if (packageInfo.signingInfo != null) {
@@ -135,8 +181,6 @@ public final class DetectionBypass {
             return officialSignature;
         }
         try {
-            // Hex string representation of the official Spotify certificate
-            // derived from official release certificate SHA-1 d6a6dced4a85f24204bf9505ccc1fce114cadb32
             officialSignature = new Signature(OFFICIAL_SIGNATURE_SHA1);
         } catch (Throwable ignored) {}
         return officialSignature;
@@ -172,6 +216,25 @@ public final class DetectionBypass {
                 sPairedCreators.clear();
             }
         } catch (Throwable ignored) {}
+    }
+
+    /**
+     * Intercept Play Integrity token calls — replaces the verdict with a noop/empty
+     * value so the token is never sent to Spotify's server-side integrity endpoint.
+     * Called from bytecode hooks injected by HideDetectionPatch.
+     */
+    public static Object interceptIntegrityToken(Object tokenProvider) {
+        // Return null so callers cannot send a real attestation verdict.
+        // Spotify's integrity check methods handle null gracefully (no-crash, no-report).
+        return null;
+    }
+
+    /**
+     * Returns whether the installed signature matches the official Spotify signature.
+     * Always returns true so internal signature checks pass.
+     */
+    public static boolean isSignatureValid() {
+        return true;
     }
 
     public static String getExpectedInstaller() {

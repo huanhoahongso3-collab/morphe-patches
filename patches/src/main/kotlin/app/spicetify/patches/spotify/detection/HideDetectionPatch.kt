@@ -92,5 +92,23 @@ val hideDetectionPatch = bytecodePatch(
                 )
             }
         }
+
+        // 4. Patch boolean signature validity checks to always return true.
+        // Spotify has lightweight methods that return false when signatures don't match —
+        // these block login even after the PackageInfo hook, so we short-circuit them here.
+        SignatureValidityFingerprint.matchAllOrNull()?.forEach { match ->
+            match.method.addInstructions(
+                0,
+                """
+                    const/4 v0, 0x1
+                    return v0
+                """.trimIndent()
+            )
+        }
+
+        // 5. Silence the login session validator that blocks sessions on patched builds.
+        LoginSessionValidatorFingerprint.matchAllOrNull()?.forEach { match ->
+            match.method.addInstructions(0, "return-void")
+        }
     }
 }

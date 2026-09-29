@@ -39,3 +39,22 @@ internal object ApplicationOnCreateFingerprint : Fingerprint(
     parameters = emptyList(),
     returnType = "V",
 )
+
+/**
+ * Matches Spotify's boolean signature/certificate validity checker used in the login flow.
+ * Always returning true allows login to proceed even when the build is not officially signed.
+ */
+internal object SignatureValidityFingerprint : Fingerprint(
+    strings = listOf("isValidSignature", "signature_valid", "cert_valid"),
+    returnType = "Z",
+)
+
+/**
+ * Matches Spotify's login session validator that verifies device integrity before
+ * establishing a login session. Early-returning or short-circuiting prevents this
+ * from blocking login on patched builds.
+ */
+internal object LoginSessionValidatorFingerprint : Fingerprint(
+    strings = listOf("session_validator", "device_integrity", "login_blocked"),
+    returnType = "V",
+)
