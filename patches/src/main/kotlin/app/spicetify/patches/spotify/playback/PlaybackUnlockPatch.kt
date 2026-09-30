@@ -19,17 +19,21 @@ val playbackUnlockPatch = bytecodePatch(
     extendWith("extensions/spotify.mpe")
 
     execute {
-        // Intercept ProductState attributes getter to apply stealth playback unlocks
         ProductStateProtoGetMapFingerprint.matchAllOrNull()?.forEach { match ->
             val method = match.method
             val instructions = method.implementation?.instructions?.toList().orEmpty()
             val igetIndex = instructions.indexOfFirst { it.opcode == Opcode.IGET_OBJECT }
             if (igetIndex >= 0) {
                 val register = (instructions[igetIndex] as TwoRegisterInstruction).registerA
-                method.addInstructions(
-                    igetIndex + 1,
-                    "invoke-static { v$register }, $EXTENSION_PLAYBACK_CLASS->unlockPlaybackWithoutPremiumToggle(Ljava/util/Map;)V"
-                )
+                val alreadyInjected = instructions.any { inst ->
+                    inst.toString().contains("PlaybackUnlocker")
+                }
+                if (!alreadyInjected) {
+                    method.addInstructions(
+                        igetIndex + 1,
+                        "invoke-static { v$register }, $EXTENSION_PLAYBACK_CLASS->unlockPlaybackWithoutPremiumToggle(Ljava/util/Map;)V"
+                    )
+                }
             }
         }
     }

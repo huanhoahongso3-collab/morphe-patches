@@ -22,32 +22,33 @@ public final class PlaybackUnlocker {
 
     /**
      * Account capability flags to enable directly for playback without spoofing premium identity.
+     * Values are strings matching Spotify's Protobuf AccountAttributeProto schema.
      */
     private static final String[] BOOLEAN_ENABLE_KEYS = {
             "shuffle",
             "on-demand",
             "player-level-timeout",
-            "radio-ad-supported"        // set to false to suppress radio ads
+            "radio-ad-supported"
     };
 
-    private static final boolean[] BOOLEAN_ENABLE_VALUES = {
-            true,   // shuffle: always enabled
-            true,   // on-demand: allow selecting any track
-            false,  // player-level-timeout: disable session timeout
-            false   // radio-ad-supported: disable radio audio ads
+    private static final String[] BOOLEAN_ENABLE_VALUES = {
+            "1",    // shuffle: enabled ("1")
+            "1",    // on-demand: enabled ("1")
+            "0",    // player-level-timeout: disabled ("0")
+            "0"     // radio-ad-supported: disabled ("0")
     };
 
     /**
      * Integer capability flags for skip counts.
      */
     private static final String[] INTEGER_KEYS = {
-            "skip",              // number of skips per hour; max int = unlimited
-            "skip-after-ad"      // skips allowed after an audio ad
+            "skip",
+            "skip-after-ad"
     };
 
-    private static final int[] INTEGER_VALUES = {
-            Integer.MAX_VALUE,
-            Integer.MAX_VALUE
+    private static final String[] INTEGER_VALUES = {
+            "2147483647",
+            "2147483647"
     };
 
     /**
@@ -87,10 +88,6 @@ public final class PlaybackUnlocker {
 
     /**
      * Stealth unlocker for ProductState attributes.
-     * Selectively overrides playback feature flags (shuffle, on-demand, skip limits, ad suppression)
-     * while leaving account identity ("player-license", "player-type") intact to prevent detection.
-     *
-     * @param attributes The ProductState attribute map (key → attribute object)
      */
     public static void unlockPlaybackAttributes(Map<?, ?> attributes) {
         unlockPlaybackWithoutPremiumToggle(attributes);
@@ -144,9 +141,6 @@ public final class PlaybackUnlocker {
 
     // ---- Audio Ad Blocking & Skip Logic ----
 
-    /**
-     * Returns true if the given URI belongs to an audio ad or interstitial.
-     */
     public static boolean isAudioAdUri(String uri) {
         if (uri == null || uri.isEmpty()) return false;
         String lower = uri.toLowerCase();
@@ -156,9 +150,6 @@ public final class PlaybackUnlocker {
         return false;
     }
 
-    /**
-     * Returns true if the given track object represents an audio ad.
-     */
     public static boolean isAudioAd(Object track) {
         if (track == null) return false;
         try {
@@ -176,16 +167,10 @@ public final class PlaybackUnlocker {
         return isAudioAdUri(track.toString());
     }
 
-    /**
-     * Direct query used by playback hook to determine if an audio ad track should be skipped immediately.
-     */
     public static boolean shouldSkipAudioAd(Object track) {
         return isAudioAd(track);
     }
 
-    /**
-     * Filters a list of queue items, stripping out all audio ad tracks.
-     */
     public static List<Object> filterAudioAds(List<Object> queue) {
         if (queue == null) return null;
         try {
@@ -201,43 +186,24 @@ public final class PlaybackUnlocker {
         }
     }
 
-    /**
-     * Returns 0 for remaining ad duration so the player treats any audio ad as finished.
-     */
     public static int getAdDurationRemaining() {
         return 0;
     }
 
     // ---- Playback Feature Override Functions ----
 
-    /**
-     * Returns true for next/skip allowed checks.
-     * Injected into methods that check if next/skip button should be enabled.
-     */
     public static boolean isNextAllowed() {
         return true;
     }
 
-    /**
-     * Returns the maximum int value for skip count remaining.
-     * Injected into methods that calculate hourly skip limits.
-     */
     public static int getSkipsRemaining() {
         return Integer.MAX_VALUE;
     }
 
-    /**
-     * Returns true for shuffle allowed check.
-     * Injected into methods that gate shuffle button and mode.
-     */
     public static boolean isShuffleAllowed() {
         return true;
     }
 
-    /**
-     * Returns true for on-demand track selection allowed check.
-     * Injected into methods that gate manual track selection.
-     */
     public static boolean isOnDemandAllowed() {
         return true;
     }
@@ -245,39 +211,52 @@ public final class PlaybackUnlocker {
     // ---- Reflection Helper ----
 
     private static void setAttributeValue(Object attribute, Object value) {
+        if (attribute == null || value == null) return;
         try {
-            Field f = attribute.getClass().getDeclaredField("value_");
+            Field f = null;
+            try {
+                f = attribute.getClass().getDeclaredField("value_");
+            } catch (Throwable ignored) {
+                for (Field declared : attribute.getClass().getDeclaredFields()) {
+                    if (declared.getName().toLowerCase().contains("value")) {
+                        f = declared;
+                        break;
+                    }
+                }
+            }
+
+            if (f == null) return;
             f.setAccessible(true);
-            f.set(attribute, value);
-            return;
-        } catch (Throwable ignored) {}
+            Class<?> targetType = f.getType();
 
-        try {
-            for (Field f : attribute.getClass().getDeclaredFields()) {
-                if (fieldHasValueName(f)) {
-                    f.setAccessible(true);
-                    try {
-                        f.set(attribute, value);
-                        return;
-                    } catch (Throwable ignored) {}
+            if (targetType == String.class) {
+                if (value instanceof Boolean) {
+                    f.set(attribute, ((Boolean) value) ? "1" : "0");
+                } else {
+                    f.set(attribute, String.valueOf(value));
                 }
+            } else if (targetType == boolean.class || targetType == Boolean.class) {
+                if (value instanceof Boolean) {
+                    f.set(attribute, value);
+                } else if (value instanceof Number) {
+                    f.set(attribute, ((Number) value).intValue() != 0);
+                } else {
+                    String s = String.valueOf(value);
+                    f.set(attribute, "1".equals(s) || "true".equalsIgnoreCase(s));
+                }
+            } else if (targetType == int.class || targetType == Integer.class) {
+                if (value instanceof Number) {
+                    f.set(attribute, ((Number) value).intValue());
+                } else {
+                    try {
+                        f.set(attribute, Integer.parseInt(String.valueOf(value)));
+                    } catch (Throwable ignored) {
+                        f.set(attribute, 0);
+                    }
+                }
+            } else {
+                f.set(attribute, value);
             }
         } catch (Throwable ignored) {}
-
-        try {
-            for (Method m : attribute.getClass().getMethods()) {
-                if (m.getName().toLowerCase().contains("setvalue") &&
-                        m.getParameterTypes().length == 1) {
-                    try {
-                        m.invoke(attribute, value);
-                        return;
-                    } catch (Throwable ignored) {}
-                }
-            }
-        } catch (Throwable ignored) {}
-    }
-
-    private static boolean fieldHasValueName(Field f) {
-        return f.getName().toLowerCase().contains("value");
     }
 }

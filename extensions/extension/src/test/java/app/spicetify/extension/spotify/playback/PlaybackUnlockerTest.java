@@ -14,9 +14,9 @@ import static org.junit.Assert.assertTrue;
 public class PlaybackUnlockerTest {
 
     public static class DummyAccountAttribute {
-        public Object value_;
+        public String value_;
 
-        public DummyAccountAttribute(Object value) {
+        public DummyAccountAttribute(String value) {
             this.value_ = value;
         }
     }
@@ -40,9 +40,9 @@ public class PlaybackUnlockerTest {
         attributes.put("player-license", new DummyAccountAttribute("free"));
         attributes.put("player-type", new DummyAccountAttribute("free"));
         attributes.put("type", new DummyAccountAttribute("free"));
-        attributes.put("shuffle", new DummyAccountAttribute(Boolean.FALSE));
-        attributes.put("on-demand", new DummyAccountAttribute(Boolean.FALSE));
-        attributes.put("skip", new DummyAccountAttribute(6));
+        attributes.put("shuffle", new DummyAccountAttribute("0"));
+        attributes.put("on-demand", new DummyAccountAttribute("0"));
+        attributes.put("skip", new DummyAccountAttribute("6"));
         attributes.put("audio-ads", new DummyAccountAttribute("1"));
 
         PlaybackUnlocker.unlockPlaybackWithoutPremiumToggle(attributes);
@@ -52,10 +52,10 @@ public class PlaybackUnlockerTest {
         assertEquals("free", attributes.get("player-type").value_);
         assertEquals("free", attributes.get("type").value_);
 
-        // Feature flags are unlocked
-        assertEquals(Boolean.TRUE, attributes.get("shuffle").value_);
-        assertEquals(Boolean.TRUE, attributes.get("on-demand").value_);
-        assertEquals(Integer.MAX_VALUE, attributes.get("skip").value_);
+        // Feature flags are unlocked with Protobuf String format ("1" / "0" / "2147483647")
+        assertEquals("1", attributes.get("shuffle").value_);
+        assertEquals("1", attributes.get("on-demand").value_);
+        assertEquals("2147483647", attributes.get("skip").value_);
         assertEquals("0", attributes.get("audio-ads").value_);
     }
 
