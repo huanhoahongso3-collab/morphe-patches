@@ -79,7 +79,13 @@ public final class NetworkInterceptor {
      */
     public static Object intercept(Object chain) throws IOException {
         if (!enabled) {
-            return proceedWithChain(chain, getRequest(chain));
+            try {
+                return proceedWithChain(chain, getRequest(chain));
+            } catch (IOException ioe) {
+                throw ioe;
+            } catch (Throwable t) {
+                throw new IOException("intercept failed", t);
+            }
         }
 
         try {
@@ -94,9 +100,18 @@ public final class NetworkInterceptor {
             }
 
             return proceedWithChain(chain, request);
+        } catch (IOException ioe) {
+            throw ioe;
         } catch (Throwable e) {
-            // On any error, proceed with original request unmodified
-            return proceedWithChain(chain, getRequest(chain));
+            // On any error, proceed with original request unmodified — wrap any
+            // checked Exception from getRequest so the compiler is satisfied
+            try {
+                return proceedWithChain(chain, getRequest(chain));
+            } catch (IOException ioe2) {
+                throw ioe2;
+            } catch (Throwable t) {
+                throw new IOException("intercept fallback failed", t);
+            }
         }
     }
 
