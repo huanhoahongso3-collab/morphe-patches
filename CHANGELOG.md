@@ -1,3 +1,9 @@
+## [1.1.1](https://github.com/huanhoahongso3-collab/morphe-patches/compare/v1.1.0...v1.1.1) (2026-09-30)
+
+### 🐛 Bug Fixes
+
+* **playback:** enforce Protobuf String schema for attributes to prevent app startup ClassCastException ([b68b7b0](https://github.com/huanhoahongso3-collab/morphe-patches/commit/b68b7b01570baaad707be306750266a006f274d5))
+
 ## [1.1.0](https://github.com/huanhoahongso3-collab/morphe-patches/compare/v1.0.0...v1.1.0) (2026-09-30)
 
 ### 🐛 Bug Fixes

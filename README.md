@@ -22,7 +22,7 @@ change only selected Android resources, not every Spotify screen.
 | Theme colors | Disabled | Sets selected background, accent, and pressed-accent colors. The default background is AMOLED black. Hardcoded colors and animations can retain Spotify's colors. |
 
 <!-- PATCHES_START EXPANDED -->
-> **[v1.1.0](https://github.com/huanhoahongso3-collab/morphe-patches/releases/tag/v1.1.0)**&nbsp;&nbsp;•&nbsp;&nbsp;`main`&nbsp;&nbsp;•&nbsp;&nbsp;6 patches total
+> **[v1.1.1](https://github.com/huanhoahongso3-collab/morphe-patches/releases/tag/v1.1.1)**&nbsp;&nbsp;•&nbsp;&nbsp;`main`&nbsp;&nbsp;•&nbsp;&nbsp;6 patches total
 <details open>
 <summary>📦 Spotify&nbsp;&nbsp;•&nbsp;&nbsp;6 patches</summary>
 <br>
