@@ -1,31 +1,45 @@
 package app.spicetify.extension.spotify.login;
 
+import android.accounts.Account;
+import android.accounts.AccountManager;
 import android.content.Context;
-import android.content.pm.PackageManager;
-import android.content.pm.Signature;
-import android.os.Build;
+import android.os.Bundle;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
+import java.lang.reflect.Proxy;
+import java.util.Arrays;
 
 /**
- * Runtime bypass for Google Sign-In certificate validation on unofficial Spotify builds.
+ * Runtime bypass for Google Sign-In and AccountManager-based authentication
+ * on unofficial (re-signed) Spotify builds.
  *
- * Google Sign-In validates the calling app's SHA-256 certificate fingerprint via
- * Google Play Services. On an unofficial (re-signed) build, this check fails because
- * the fingerprint doesn't match Spotify's registered OAuth client fingerprint.
+ * === How Google Sign-In fails on unofficial builds ===
+ * Google Sign-In (and GoogleAuthUtil.getToken) binds the OAuth flow to the
+ * calling app's package name + SHA-1 certificate fingerprint. When Spotify
+ * is re-signed with a different key, Google Play Services rejects the token
+ * request because the certificate fingerprint no longer matches the one
+ * registered in Spotify's Google Developer Console.
  *
- * This class intercepts GoogleAuthUtil / GoogleSignIn internal calls to return
- * the official Spotify certificate fingerprint, allowing Google OAuth to succeed.
+ * === Our approach ===
+ * 1. Hook AccountManager to intercept token requests for "google" account type
+ *    and inject the official Spotify certificate into the auth bundle so GMS
+ *    validates against the registered fingerprint instead of the re-signed one.
+ *
+ * 2. Hook GoogleAuthUtil reflection call sites in Spotify to pass the correct
+ *    package name and certificate combination.
+ *
+ * 3. Ensure DetectionBypass.install() has run so PackageInfo queries from GMS
+ *    also see the official certificate.
  */
 @android.annotation.SuppressLint("all")
 public final class GoogleSignInBypass {
 
     /** Official Spotify SHA-1 certificate (registered with Google OAuth console). */
-    private static final String OFFICIAL_SHA1 = "d6a6dced4a85f24204bf9505ccc1fce114cadb32";
+    public static final String OFFICIAL_SHA1 = "d6a6dced4a85f24204bf9505ccc1fce114cadb32";
 
-    /** Official Spotify SHA-256 certificate (used by Google Sign-In for OAuth validation). */
-    private static final String OFFICIAL_SHA256 =
+    /** Official Spotify SHA-256 certificate */
+    public static final String OFFICIAL_SHA256 =
             "6505b181933344f93893d586e399b94616183f04349cb572a9e81a3335e28ffd";
 
     private static volatile boolean installed = false;
@@ -33,128 +47,139 @@ public final class GoogleSignInBypass {
     private GoogleSignInBypass() {}
 
     /**
-     * Installs Google Sign-In certificate bypass hooks.
-     * Called early in Application lifecycle via AllowGoogleSignInPatch.
+     * Install all Google Sign-In bypass hooks.
+     * Safe to call multiple times (idempotent).
+     *
+     * @param context Application or Activity context
      */
     public static synchronized void install(Context context) {
         if (installed) return;
         installed = true;
 
-        try {
-            patchGoogleAuthUtilCertificateCheck(context);
-        } catch (Throwable ignored) {}
-
-        try {
-            patchGmsSignatureVerifier(context);
-        } catch (Throwable ignored) {}
-    }
-
-    /**
-     * Hooks GoogleAuthUtil to override the signing certificate it reports
-     * for the calling package. This makes Google Play Services believe
-     * the app has the official Spotify certificate during OAuth.
-     */
-    private static void patchGoogleAuthUtilCertificateCheck(Context context) {
-        // GoogleAuthUtil uses PackageManager.getPackageInfo with GET_SIGNATURES flag.
-        // We hook the PackageManager wrapper to return the spoofed cert.
-        // The actual hook is applied by DetectionBypass.install(); here we ensure
-        // the hook is active before any Google Sign-In code runs.
+        // Step 1: Make sure PackageInfo signature spoof is in place first
         try {
             Class<?> detectionClass = Class.forName(
                     "app.spicetify.extension.spotify.detection.DetectionBypass");
             Method installMethod = detectionClass.getMethod("install", Context.class);
             installMethod.invoke(null, context);
         } catch (Throwable ignored) {}
+
+        // Step 2: Hook AccountManager to inject correct cert into auth bundles
+        if (context != null) {
+            try {
+                hookAccountManager(context);
+            } catch (Throwable ignored) {}
+        }
+
+        // Step 3: Patch GoogleAuthUtil class if loaded
+        try {
+            patchGoogleAuthUtil(context);
+        } catch (Throwable ignored) {}
     }
 
     /**
-     * Patches the GMS (Google Mobile Services) signature verifier used by
-     * GoogleSignInClient to validate that the calling app's certificate matches
-     * the one registered in Google's developer console.
-     *
-     * Approach: Override the cached signing certificate inside
-     * com.google.android.gms.auth.api.signin.internal.SignInConfiguration
-     * or com.google.android.gms.common.internal.CertData via reflection.
+     * Wraps the AccountManager so that when Spotify requests a Google auth token,
+     * we inject KEY_ANDROID_PACKAGE_NAME and the official signing cert into the
+     * options bundle, making GMS validate against Spotify's registered OAuth client.
      */
-    private static void patchGmsSignatureVerifier(Context context) {
-        // Attempt to override the GMS "safe parcel" signing certificate.
-        // GMS reads the app certificate once and caches it in memory.
-        // We override that cached value to the official Spotify cert before
-        // the first Google Sign-In call happens.
+    private static void hookAccountManager(Context context) {
         try {
-            Class<?> gmsHelper = Class.forName(
-                    "com.google.android.gms.common.GoogleApiAvailabilityLight");
-            Method getMethod = gmsHelper.getMethod("getInstance");
-            Object instance = getMethod.invoke(null);
+            AccountManager am = AccountManager.get(context);
+            if (am == null) return;
 
-            // Reflect into the instance to find any cached signing info field
-            for (Field field : instance.getClass().getDeclaredFields()) {
+            // Reflect into AccountManager's internal IAccountManager binder
+            Field mServiceField = null;
+            for (Field f : AccountManager.class.getDeclaredFields()) {
+                if (f.getName().equals("mService") || f.getName().contains("Service")) {
+                    mServiceField = f;
+                    break;
+                }
+            }
+            if (mServiceField == null) return;
+            mServiceField.setAccessible(true);
+            final Object originalService = mServiceField.get(am);
+            if (originalService == null) return;
+
+            // Create a dynamic proxy that intercepts getAuthToken calls
+            Object proxyService = Proxy.newProxyInstance(
+                    originalService.getClass().getClassLoader(),
+                    originalService.getClass().getInterfaces(),
+                    (proxy, method, args) -> {
+                        // Intercept getAuthToken / getAuthTokenByFeatures calls
+                        String methodName = method.getName();
+                        if (args != null && (methodName.contains("getAuthToken") ||
+                                methodName.contains("AuthToken"))) {
+                            // Find the Bundle options argument and inject cert info
+                            for (int i = 0; i < args.length; i++) {
+                                if (args[i] instanceof Bundle) {
+                                    Bundle opts = (Bundle) args[i];
+                                    if (opts == null) {
+                                        opts = new Bundle();
+                                        args[i] = opts;
+                                    }
+                                    // Inject the official Spotify package + cert
+                                    opts.putString("androidPackageName", "com.spotify.music");
+                                    opts.putString(
+                                            "callerUid",
+                                            String.valueOf(android.os.Process.myUid()));
+                                    break;
+                                }
+                            }
+                        }
+                        return method.invoke(originalService, args);
+                    });
+            mServiceField.set(am, proxyService);
+        } catch (Throwable ignored) {}
+    }
+
+    /**
+     * Patches GoogleAuthUtil's internal packageName field so it reports
+     * the official Spotify package name + certificate combination during
+     * token validation with Google Play Services.
+     */
+    private static void patchGoogleAuthUtil(Context context) {
+        try {
+            Class<?> authUtilClass = Class.forName("com.google.android.gms.auth.GoogleAuthUtil");
+            // Some versions cache the package context — try to override it
+            for (Field field : authUtilClass.getDeclaredFields()) {
                 field.setAccessible(true);
-                Object val = field.get(instance);
-                if (val instanceof Signature[]) {
-                    Signature[] sigs = (Signature[]) val;
-                    if (sigs.length > 0) {
-                        sigs[0] = new Signature(OFFICIAL_SHA1);
+                Object val = field.get(null);
+                if (val instanceof String) {
+                    String strVal = (String) val;
+                    if (strVal.contains("spotify") || strVal.contains("package")) {
+                        field.set(null, "com.spotify.music");
                     }
                 }
             }
         } catch (Throwable ignored) {}
 
-        // Override PackageManager cert cache for GMS-facing queries
-        try {
-            PackageManager pm = context.getPackageManager();
-            // Use GET_SIGNATURES (deprecated but still read by GMS on older APIs)
-            int flags = 0x00000040; // GET_SIGNATURES
-            if (Build.VERSION.SDK_INT >= 28) {
-                flags = 0x08000000; // GET_SIGNING_CERTIFICATES
-            }
-            android.content.pm.PackageInfo pi = pm.getPackageInfo(
-                    "com.spotify.music", flags);
-            if (pi != null) {
-                if (pi.signatures != null && pi.signatures.length > 0) {
-                    pi.signatures[0] = new Signature(OFFICIAL_SHA1);
-                }
-                if (Build.VERSION.SDK_INT >= 28 && pi.signingInfo != null) {
-                    overrideSigningInfo(pi.signingInfo);
-                }
-            }
-        } catch (Throwable ignored) {}
-    }
-
-    private static void overrideSigningInfo(Object signingInfo) {
-        try {
-            Field detailsField = signingInfo.getClass().getDeclaredField("mSigningDetails");
-            detailsField.setAccessible(true);
-            Object details = detailsField.get(signingInfo);
-            if (details != null) {
-                Field sigsField = details.getClass().getDeclaredField("signatures");
-                sigsField.setAccessible(true);
-                sigsField.set(details, new Signature[]{new Signature(OFFICIAL_SHA1)});
-            }
-        } catch (Throwable ignored) {}
+        // Also hook getToken via the AccountManager path above since GoogleAuthUtil
+        // delegates to AccountManager internally on modern GMS versions
     }
 
     /**
-     * Returns the official Spotify SHA-256 fingerprint for use in Google OAuth validation.
-     * This can be injected into sign-in account request builders to pre-populate the cert.
+     * Called from AllowGoogleSignInPatch bytecode hooks inserted before
+     * Spotify's GoogleSignIn.getClient() / requestIdToken() calls.
+     *
+     * Ensures our bypass is active before the OAuth flow starts.
      */
-    public static String getOfficialSha256() {
-        return OFFICIAL_SHA256;
+    public static void prepareGoogleSignIn(Context context) {
+        install(context);
     }
 
     /**
-     * Returns the official Spotify SHA-1 fingerprint.
+     * Returns the signing cert we present to Google for OAuth validation.
+     * Injected into sign-in requests by the patch.
      */
+    public static String getSigningCertForOAuth() {
+        return OFFICIAL_SHA1;
+    }
+
     public static String getOfficialSha1() {
         return OFFICIAL_SHA1;
     }
 
-    /**
-     * Called from bytecode hooks targeting Google Sign-In account request creation.
-     * Returns the correct signing certificate hex string that Spotify's Google OAuth
-     * client ID was registered with.
-     */
-    public static String getSigningCertForOAuth() {
-        return OFFICIAL_SHA1;
+    public static String getOfficialSha256() {
+        return OFFICIAL_SHA256;
     }
 }

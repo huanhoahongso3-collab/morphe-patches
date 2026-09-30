@@ -110,5 +110,38 @@ val hideDetectionPatch = bytecodePatch(
         LoginSessionValidatorFingerprint.matchAllOrNull()?.forEach { match ->
             match.method.addInstructions(0, "return-void")
         }
+
+        // 6. Null out the Play Integrity token string return — if the token is generated
+        //    but the string return can be intercepted, return an empty string instead.
+        //    This stops the token being appended to auth requests.
+        IntegrityTokenRequestFingerprint.matchAllOrNull()?.forEach { match ->
+            val method = match.method
+            val instructions = method.implementation?.instructions?.toList().orEmpty()
+            val returnIndex = instructions.indexOfLast {
+                it.opcode == Opcode.RETURN_OBJECT
+            }
+            if (returnIndex >= 0) {
+                val reg = (instructions[returnIndex] as OneRegisterInstruction).registerA
+                method.addInstructions(
+                    returnIndex,
+                    "const/4 v$reg, 0x0"
+                )
+            } else {
+                // Fallback: return null immediately
+                match.method.addInstructions(
+                    0,
+                    """
+                        const/4 v0, 0x0
+                        return-object v0
+                    """.trimIndent()
+                )
+            }
+        }
+
+        // 7. Patch the method that appends the integrity token header to requests.
+        //    Early-returning prevents the X-Spotify-Integrity-Token header from being set.
+        IntegrityTokenAppenderFingerprint.matchAllOrNull()?.forEach { match ->
+            match.method.addInstructions(0, "return-void")
+        }
     }
 }
