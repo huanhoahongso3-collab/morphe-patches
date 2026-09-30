@@ -22,17 +22,19 @@ change only selected Android resources, not every Spotify screen.
 | Theme colors | Disabled | Sets selected background, accent, and pressed-accent colors. The default background is AMOLED black. Hardcoded colors and animations can retain Spotify's colors. |
 
 <!-- PATCHES_START EXPANDED -->
-> **[v1.0.0](https://github.com/huanhoahongso3-collab/morphe-patches/releases/tag/v1.0.0)**&nbsp;&nbsp;•&nbsp;&nbsp;`main`&nbsp;&nbsp;•&nbsp;&nbsp;4 patches total
+> **[v1.1.0](https://github.com/huanhoahongso3-collab/morphe-patches/releases/tag/v1.1.0)**&nbsp;&nbsp;•&nbsp;&nbsp;`main`&nbsp;&nbsp;•&nbsp;&nbsp;6 patches total
 <details open>
-<summary>📦 Spotify&nbsp;&nbsp;•&nbsp;&nbsp;4 patches</summary>
+<summary>📦 Spotify&nbsp;&nbsp;•&nbsp;&nbsp;6 patches</summary>
 <br>
 
 | 💊&nbsp;Patch | 📜&nbsp;Description | ⚙️&nbsp;Options |
 |----------|----------------|-----------|
+| [Allow Google Sign-In](#allow-google-sign-in) | Fixes Google Sign-In and standard login on unofficial builds by bypassing certificate and integrity validation that Spotify's OAuth flow performs before allowing sign-in via Google or normal credentials. |  |
 | [Block ads](#block-ads) | Blocks banner, pop-up, home feed, and browse ads around the app without modifying audio playback. |  |
 | [Clean sharing links](#clean-sharing-links) | Removes sharing identifiers and marketing parameters from open.spotify.com links. Keeps playback timestamps, context, and other parameters. |  |
 | [Hide app detection](#hide-app-detection) | Hides app modifications and prevents Spotify from detecting the patched client by disabling integrity verification reporting and spoofing official package signatures. |  |
 | [Theme colors](#theme-colors) | Changes selected background and accent color resources; defaults to AMOLED black. Some screens, hardcoded colors, and animations retain Spotify's colors. | • Primary background color<br>• Accent color<br>• Pressed accent color |
+| [Unlock playback](#unlock-playback) | Unlocks playback restrictions including unlimited skips, shuffle mode, on-demand track selection, and audio ad suppression without modifying account license attributes. |  |
 
 </details>
 

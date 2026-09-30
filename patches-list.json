@@ -1,7 +1,34 @@
 {
   "NOTE": "Do NOT manually edit this file. This file is automatically updated when semantic release (release.yml) runs. Manually editing this file can break your releases and break third party tools that use this file.",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "patches": [
+    {
+      "name": "Allow Google Sign-In",
+      "description": "Fixes Google Sign-In and standard login on unofficial builds by bypassing certificate and integrity validation that Spotify's OAuth flow performs before allowing sign-in via Google or normal credentials.",
+      "default": true,
+      "category": null,
+      "dependencies": [],
+      "compatiblePackages": [
+        {
+          "packageName": "com.spotify.music",
+          "name": "Spotify",
+          "description": null,
+          "apkFileType": "APKM",
+          "appIconColor": "#1DB954",
+          "signatures": null,
+          "targets": [
+            {
+              "version": null,
+              "versionCodes": null,
+              "isExperimental": false,
+              "minSdk": null,
+              "description": null
+            }
+          ]
+        }
+      ],
+      "options": []
+    },
     {
       "name": "Block ads",
       "description": "Blocks banner, pop-up, home feed, and browse ads around the app without modifying audio playback.",
@@ -114,7 +141,7 @@
           "title": "Primary background color",
           "description": "Background color in #RRGGBB or #AARRGGBB format.",
           "required": true,
-          "type": "STRING",
+          "type": "kotlin.String",
           "default": "#FF000000",
           "values": null
         },
@@ -123,7 +150,7 @@
           "title": "Accent color",
           "description": "Accent color in #RRGGBB or #AARRGGBB format.",
           "required": true,
-          "type": "STRING",
+          "type": "kotlin.String",
           "default": "#FF1ED760",
           "values": null
         },
@@ -132,15 +159,15 @@
           "title": "Pressed accent color",
           "description": "Pressed accent color in #RRGGBB or #AARRGGBB format.",
           "required": true,
-          "type": "STRING",
+          "type": "kotlin.String",
           "default": "#FF1ABC54",
           "values": null
         }
       ]
     },
     {
-      "name": "Allow Google Sign-In",
-      "description": "Fixes Google Sign-In and standard login on unofficial builds by bypassing certificate and integrity validation that Spotify's OAuth flow performs before allowing sign-in via Google or normal credentials.",
+      "name": "Unlock playback",
+      "description": "Unlocks playback restrictions including unlimited skips, shuffle mode, on-demand track selection, and audio ad suppression without modifying account license attributes.",
       "default": true,
       "category": null,
       "dependencies": [],
