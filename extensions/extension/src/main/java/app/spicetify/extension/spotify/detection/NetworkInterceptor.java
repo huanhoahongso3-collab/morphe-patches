@@ -1,10 +1,7 @@
 package app.spicetify.extension.spotify.detection;
 
-import android.util.Log;
-
 import java.io.IOException;
-import java.net.HttpURLConnection;
-import java.net.URL;
+import java.lang.reflect.Method;
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.Set;
@@ -12,21 +9,10 @@ import java.util.Set;
 /**
  * OkHttp-compatible network interceptor that strips Spotify integrity/detection
  * tokens from outgoing HTTP requests before they reach Spotify's servers.
- *
- * Spotify sends Play Integrity API verdicts and tamper-check tokens to its
- * authentication and streaming backends. This interceptor removes those headers
- * and JSON body fields so the server never receives a "FAILS_BASIC_INTEGRITY"
- * verdict from a modified client.
- *
- * Integration: This class is invoked via reflection from OkHttpClientPatch,
- * which hooks the OkHttpClient.Builder used by Spotify's networking layer.
  */
 @android.annotation.SuppressLint("all")
 public final class NetworkInterceptor {
 
-    private static final String TAG = "SpicetifyNet";
-
-    /** Spotify backend hostnames that receive integrity tokens */
     private static final Set<String> SPOTIFY_HOSTS = new HashSet<>(Arrays.asList(
             "spclient.wg.spotify.com",
             "accounts.spotify.com",
@@ -35,21 +21,16 @@ public final class NetworkInterceptor {
             "login5.spotify.com"
     ));
 
-    /** Request headers Spotify sends that contain integrity/detection info */
     private static final Set<String> STRIP_HEADERS = new HashSet<>(Arrays.asList(
             "X-Spotify-Integrity-Token",
             "X-Integrity-Token",
             "X-Play-Integrity-Token",
             "X-App-Integrity",
-            "X-Client-Token",       // can contain build fingerprint
-            "X-Spotify-App-State",  // may include tamper flags
+            "X-Client-Token",
+            "X-Spotify-App-State",
             "X-Device-Attestation"
     ));
 
-    /**
-     * JSON body field names that carry integrity/attestation data.
-     * These are stripped from POST/PUT request bodies before sending.
-     */
     private static final Set<String> STRIP_JSON_FIELDS = new HashSet<>(Arrays.asList(
             "integrityToken",
             "integrity_token",
@@ -64,19 +45,10 @@ public final class NetworkInterceptor {
     ));
 
     private static volatile boolean enabled = true;
+    private static Method proceedMethod = null;
 
     private NetworkInterceptor() {}
 
-    /**
-     * Called via reflection from Spotify's OkHttp interceptor chain.
-     * Strips integrity-related headers from the request before forwarding.
-     *
-     * This method uses duck-typing via reflection to work without a compile-time
-     * dependency on OkHttp (which is bundled inside Spotify's APK).
-     *
-     * @param chain The OkHttp Interceptor.Chain object
-     * @return The response from proceeding with the cleaned request
-     */
     public static Object intercept(Object chain) throws IOException {
         if (!enabled) {
             try {
@@ -92,7 +64,6 @@ public final class NetworkInterceptor {
             Object request = getRequest(chain);
             Object url = getUrl(request);
 
-            // Only modify requests to known Spotify hosts
             String host = getHost(url);
             if (host != null && isSpotifyHost(host)) {
                 request = stripIntegrityHeaders(request);
@@ -103,8 +74,6 @@ public final class NetworkInterceptor {
         } catch (IOException ioe) {
             throw ioe;
         } catch (Throwable e) {
-            // On any error, proceed with original request unmodified — wrap any
-            // checked Exception from getRequest so the compiler is satisfied
             try {
                 return proceedWithChain(chain, getRequest(chain));
             } catch (IOException ioe2) {
@@ -121,14 +90,9 @@ public final class NetworkInterceptor {
                 return true;
             }
         }
-        // Also match any *.spotify.com subdomain
         return host.endsWith(".spotify.com") || host.equals("spotify.com");
     }
 
-    /**
-     * Removes integrity-related headers from the OkHttp Request.
-     * Uses reflection to call Request.newBuilder(), removeHeader(), and build().
-     */
     private static Object stripIntegrityHeaders(Object request) {
         try {
             Object builder = request.getClass().getMethod("newBuilder").invoke(request);
@@ -140,10 +104,8 @@ public final class NetworkInterceptor {
                 } catch (Throwable ignored) {}
             }
 
-            // Also strip any X-Spotify-* headers that might carry detection info
             try {
                 Object headers = request.getClass().getMethod("headers").invoke(request);
-                // Get all header names
                 java.util.List<?> names = (java.util.List<?>) headers.getClass()
                         .getMethod("names").invoke(headers);
                 for (Object name : names) {
@@ -167,16 +129,11 @@ public final class NetworkInterceptor {
         }
     }
 
-    /**
-     * Strips integrity-related fields from JSON request bodies.
-     * Uses simple string replacement to avoid needing a JSON parser dependency.
-     */
     private static Object stripIntegrityBodyFields(Object request) {
         try {
             Object body = request.getClass().getMethod("body").invoke(request);
             if (body == null) return request;
 
-            // Check content type is JSON
             Object contentType = body.getClass().getMethod("contentType").invoke(body);
             if (contentType == null) return request;
             String contentTypeStr = contentType.toString();
@@ -184,20 +141,15 @@ public final class NetworkInterceptor {
                 return request;
             }
 
-            // Read body as string
-            okio_buffer_approach:
             try {
-                // Use okio Buffer to read the body
                 Class<?> bufferClass = Class.forName("okio.Buffer");
                 Object buffer = bufferClass.newInstance();
                 body.getClass().getMethod("writeTo", bufferClass).invoke(body, buffer);
                 String bodyStr = (String) bufferClass.getMethod("readUtf8").invoke(buffer);
 
-                // Strip JSON fields
                 String cleaned = cleanJsonBody(bodyStr);
-                if (cleaned.equals(bodyStr)) return request; // nothing changed
+                if (cleaned.equals(bodyStr)) return request;
 
-                // Reconstruct body
                 Class<?> requestBodyClass = Class.forName("okhttp3.RequestBody");
                 Class<?> mediaTypeClass = Class.forName("okhttp3.MediaType");
                 Object mediaType = mediaTypeClass.getMethod("parse", String.class)
@@ -205,7 +157,6 @@ public final class NetworkInterceptor {
                 Object newBody = requestBodyClass.getMethod("create", mediaTypeClass, String.class)
                         .invoke(null, mediaType, cleaned);
 
-                // Build new request with new body
                 Object builder = request.getClass().getMethod("newBuilder").invoke(request);
                 String method = (String) request.getClass().getMethod("method").invoke(request);
                 builder.getClass()
@@ -218,28 +169,17 @@ public final class NetworkInterceptor {
         return request;
     }
 
-    /**
-     * Removes integrity token fields from a JSON string using simple regex-like replacement.
-     * Handles both "field": "value" and "field": null patterns.
-     */
     static String cleanJsonBody(String json) {
         if (json == null || json.isEmpty()) return json;
         String result = json;
         for (String field : STRIP_JSON_FIELDS) {
-            // Match both camelCase and snake_case, quoted string value or null
-            result = result.replaceAll(
-                    "\"" + field + "\"\\s*:\\s*\"[^\"]*\"\\s*,?", "");
-            result = result.replaceAll(
-                    "\"" + field + "\"\\s*:\\s*null\\s*,?", "");
-            result = result.replaceAll(
-                    ",\\s*\"" + field + "\"\\s*:\\s*\"[^\"]*\"", "");
-            result = result.replaceAll(
-                    ",\\s*\"" + field + "\"\\s*:\\s*null", "");
+            result = result.replaceAll("\"" + field + "\"\\s*:\\s*\"[^\"]*\"\\s*,?", "");
+            result = result.replaceAll("\"" + field + "\"\\s*:\\s*null\\s*,?", "");
+            result = result.replaceAll(",\\s*\"" + field + "\"\\s*:\\s*\"[^\"]*\"", "");
+            result = result.replaceAll(",\\s*\"" + field + "\"\\s*:\\s*null", "");
         }
         return result;
     }
-
-    // ---- Reflection helpers ----
 
     private static Object getRequest(Object chain) throws Exception {
         return chain.getClass().getMethod("request").invoke(chain);
@@ -259,10 +199,18 @@ public final class NetworkInterceptor {
 
     private static Object proceedWithChain(Object chain, Object request) throws IOException {
         try {
-            return chain.getClass().getMethod("proceed",
-                    request.getClass().getSuperclass() != null
-                            ? Object.class : request.getClass())
-                    .invoke(chain, request);
+            if (proceedMethod == null) {
+                for (Method m : chain.getClass().getMethods()) {
+                    if (m.getName().equals("proceed") && m.getParameterTypes().length == 1) {
+                        proceedMethod = m;
+                        proceedMethod.setAccessible(true);
+                        break;
+                    }
+                }
+            }
+            if (proceedMethod != null) {
+                return proceedMethod.invoke(chain, request);
+            }
         } catch (java.lang.reflect.InvocationTargetException e) {
             Throwable cause = e.getCause();
             if (cause instanceof IOException) throw (IOException) cause;
@@ -270,6 +218,7 @@ public final class NetworkInterceptor {
         } catch (Throwable e) {
             throw new IOException("Chain proceed failed", e);
         }
+        throw new IOException("Could not find proceed method on chain");
     }
 
     public static void setEnabled(boolean value) {
