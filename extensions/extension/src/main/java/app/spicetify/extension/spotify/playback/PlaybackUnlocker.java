@@ -12,18 +12,14 @@ import java.util.Set;
 /**
  * Stealth runtime helper for audio ad blocking and playback restrictions bypass.
  *
- * To minimize server-side detection, this class DOES NOT modify account identity
- * keys such as "player-license" or "player-type" to "premium".
- * Instead, it selectively unlocks feature capability flags (shuffle, on-demand,
- * skip limits) and provides runtime checks to detect and skip audio ad tracks.
+ * To prevent server-side detection and account suspension, this class DOES NOT
+ * modify attributes during outgoing network sync calls (writeTo, toByteArray, sync).
+ * It only applies capability overrides (shuffle, on-demand, skip limits) for local UI
+ * and playback controller queries.
  */
 @android.annotation.SuppressLint("all")
 public final class PlaybackUnlocker {
 
-    /**
-     * Account capability flags to enable directly for playback without spoofing premium identity.
-     * Values are strings matching Spotify's Protobuf AccountAttributeProto schema.
-     */
     private static final String[] BOOLEAN_ENABLE_KEYS = {
             "shuffle",
             "on-demand",
@@ -38,9 +34,6 @@ public final class PlaybackUnlocker {
             "0"     // radio-ad-supported: disabled ("0")
     };
 
-    /**
-     * Integer capability flags for skip counts.
-     */
     private static final String[] INTEGER_KEYS = {
             "skip",
             "skip-after-ad"
@@ -51,9 +44,6 @@ public final class PlaybackUnlocker {
             "2147483647"
     };
 
-    /**
-     * Keys to disable audio/display ad injection in ProductState without touching account license.
-     */
     private static final String[] DISABLE_AD_KEYS = {
             "audio-ads",
             "ad-formats",
@@ -61,9 +51,6 @@ public final class PlaybackUnlocker {
             "sponsored-content"
     };
 
-    /**
-     * Key patterns used to detect audio ad track URIs.
-     */
     private static final String[] AUDIO_AD_PATTERNS = {
             "spotify:ad:",
             "spotify:local:ad:",
@@ -74,10 +61,6 @@ public final class PlaybackUnlocker {
             "interstitial"
     };
 
-    /**
-     * Keys that identify account identity/tier.
-     * We explicitly DO NOT modify these to avoid detection by server telemetry.
-     */
     private static final Set<String> SENSITIVE_IDENTITY_KEYS = new HashSet<>(Arrays.asList(
             "player-license",
             "player-type",
@@ -86,28 +69,29 @@ public final class PlaybackUnlocker {
 
     private PlaybackUnlocker() {}
 
-    /**
-     * Stealth unlocker for ProductState attributes.
-     */
     public static void unlockPlaybackAttributes(Map<?, ?> attributes) {
         unlockPlaybackWithoutPremiumToggle(attributes);
     }
 
     /**
-     * Selectively unlocks playback capabilities without toggling the global premium account tier.
-     * This reduces detection risk by preserving "player-license": "free" server state alignment.
-     *
-     * @param attributes The ProductState attribute map
+     * Stealth unlocker for ProductState attributes.
+     * Overrides capability flags for local UI/player queries, but leaves outgoing
+     * network synchronization packets untouched to prevent server detection.
      */
     public static void unlockPlaybackWithoutPremiumToggle(Map<?, ?> attributes) {
         if (attributes == null || attributes.isEmpty()) return;
+
+        // Stealth check: if called from Protobuf serialization or network sync, return immediately
+        if (isSyncOrSerializationCall()) {
+            return;
+        }
+
         try {
             for (Map.Entry<?, ?> entry : attributes.entrySet()) {
                 Object key = entry.getKey();
                 if (key == null) continue;
                 String keyStr = key.toString();
 
-                // Skip sensitive account identity keys to avoid server discrepancy detection
                 if (SENSITIVE_IDENTITY_KEYS.contains(keyStr)) {
                     continue;
                 }
@@ -115,21 +99,18 @@ public final class PlaybackUnlocker {
                 Object attr = entry.getValue();
                 if (attr == null) continue;
 
-                // Enable boolean capability flags
                 for (int i = 0; i < BOOLEAN_ENABLE_KEYS.length; i++) {
                     if (keyStr.equals(BOOLEAN_ENABLE_KEYS[i])) {
                         setAttributeValue(attr, BOOLEAN_ENABLE_VALUES[i]);
                     }
                 }
 
-                // Override skip limits to max int
                 for (int i = 0; i < INTEGER_KEYS.length; i++) {
                     if (keyStr.equals(INTEGER_KEYS[i])) {
                         setAttributeValue(attr, INTEGER_VALUES[i]);
                     }
                 }
 
-                // Disable ad-related flags
                 for (String disableKey : DISABLE_AD_KEYS) {
                     if (keyStr.equals(disableKey)) {
                         setAttributeValue(attr, "0");
@@ -137,6 +118,30 @@ public final class PlaybackUnlocker {
                 }
             }
         } catch (Throwable ignored) {}
+    }
+
+    /**
+     * Inspects call stack to determine if ProductState is being serialized to network.
+     */
+    private static boolean isSyncOrSerializationCall() {
+        try {
+            StackTraceElement[] stack = Thread.currentThread().getStackTrace();
+            for (StackTraceElement elem : stack) {
+                String className = elem.getClassName().toLowerCase();
+                String methodName = elem.getMethodName().toLowerCase();
+                if (className.contains("protobuf") ||
+                        className.contains("spclient") ||
+                        className.contains("network") ||
+                        className.contains("sync") ||
+                        methodName.contains("writeto") ||
+                        methodName.contains("tobytearray") ||
+                        methodName.contains("serialize") ||
+                        methodName.contains("encode")) {
+                    return true;
+                }
+            }
+        } catch (Throwable ignored) {}
+        return false;
     }
 
     // ---- Audio Ad Blocking & Skip Logic ----
