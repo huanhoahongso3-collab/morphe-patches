@@ -231,4 +231,73 @@ public final class AdBlocker {
 
         return -1;
     }
+
+    // ---- Audio ad blocking ----
+
+    /**
+     * Strings that identify audio ad / interstitial track URIs in Spotify's playback queue.
+     * Spotify audio ads are delivered as special "spotify:ad:..." URIs.
+     */
+    private static final String[] AUDIO_AD_URI_PATTERNS = new String[] {
+            "spotify:ad:",
+            "spotify:local:ad:",
+            "/ad/",
+            "adid=",
+            "ad_session_id",
+            "ad-audio"
+    };
+
+    /**
+     * Returns true if the given track URI or string represents an audio ad.
+     * Used by bytecode hooks to detect audio ad tracks.
+     */
+    public static boolean isAudioAdUri(String uri) {
+        if (uri == null || uri.isEmpty()) return false;
+        String lower = uri.toLowerCase();
+        for (String pattern : AUDIO_AD_URI_PATTERNS) {
+            if (lower.contains(pattern)) return true;
+        }
+        return false;
+    }
+
+    /**
+     * Returns true if the given Object's string representation is an audio ad.
+     * Overloaded version for use with arbitrary track/item objects.
+     */
+    public static boolean isAudioAdObject(Object track) {
+        if (track == null) return false;
+        try {
+            // Try to get URI field directly
+            for (Field f : track.getClass().getDeclaredFields()) {
+                if (f.getName().toLowerCase().contains("uri") ||
+                        f.getName().toLowerCase().contains("id")) {
+                    f.setAccessible(true);
+                    Object val = f.get(track);
+                    if (val instanceof String && isAudioAdUri((String) val)) {
+                        return true;
+                    }
+                }
+            }
+        } catch (Throwable ignored) {}
+        return isAudioAdUri(track.toString());
+    }
+
+    /**
+     * Filters a playback queue list to remove audio ad entries.
+     * Safe to call on any List; returns original list on error.
+     */
+    public static List<Object> filterAudioAds(List<Object> queue) {
+        if (queue == null) return null;
+        try {
+            List<Object> filtered = new ArrayList<>(queue.size());
+            for (Object item : queue) {
+                if (!isAudioAdObject(item)) {
+                    filtered.add(item);
+                }
+            }
+            return filtered;
+        } catch (Throwable t) {
+            return queue;
+        }
+    }
 }
